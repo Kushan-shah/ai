@@ -1,17 +1,19 @@
+import shutil
 import streamlit as st
 from PIL import Image
 import pytesseract
-import shutil
 import time
 import google.generativeai as genai
 
 # ========== ENSURE TESSERACT BINARY ==========
-# Stop immediately if tesseract isn't installed
+# Fail fast if Tesseract isn’t installed on the host
 if not shutil.which("tesseract"):
-    st.error("⛔ Tesseract OCR binary not found. Please install 'tesseract-ocr' on the server.")
+    st.error("⛔ Tesseract OCR binary not found. Make sure your Aptfile includes:\n\n"
+             "  tesseract-ocr\n"
+             "  libtesseract-dev")
     st.stop()
 
-# Point pytesseract at the binary
+# Point pytesseract at the system binary
 pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
 
 # ========== SETUP AI MODEL ==========
@@ -114,32 +116,32 @@ remove_keys = []
 
 for label, timer in st.session_state.timers.items():
     with st.container():
-        col1, col2, col3 = st.columns([4, 1, 1])
-        with col1:
+        c1, c2, c3 = st.columns([4,1,1])
+        with c1:
             if timer["running"] and not timer["paused"]:
                 elapsed = time.time() - timer["start_time"]
                 timer["remaining"] = max(0, timer["duration"] - elapsed)
                 if timer["remaining"] == 0:
                     st.error(f"⏰ '{label}' is DONE!")
                     remove_keys.append(label)
-            st.markdown(f"**{label}** - ⏳ `{format_time(timer['remaining'])}`")
-        with col2:
+            st.markdown(f"**{label}** — `{format_time(timer['remaining'])}`")
+        with c2:
             if not timer["running"]:
-                if st.button(f"▶️ Start", key=f"start_{label}"):
+                if st.button("▶️ Start", key=f"start_{label}"):
                     timer["start_time"] = time.time()
                     timer["running"] = True
                     timer["paused"] = False
             elif not timer["paused"]:
-                if st.button(f"⏸ Pause", key=f"pause_{label}"):
+                if st.button("⏸ Pause", key=f"pause_{label}"):
                     timer["paused"] = True
                     timer["duration"] = timer["remaining"]
                     timer["running"] = False
-            else:  # paused
-                if st.button(f"▶️ Resume", key=f"resume_{label}"):
+            else:
+                if st.button("▶️ Resume", key=f"resume_{label}"):
                     timer["start_time"] = time.time()
                     timer["running"] = True
                     timer["paused"] = False
-        with col3:
+        with c3:
             if st.button("🗑 Stop", key=f"stop_{label}"):
                 remove_keys.append(label)
 
@@ -158,7 +160,6 @@ if st.session_state.steps_output:
 # ========== INTERACTIVE CHATBOT ==========
 st.markdown("---")
 st.subheader("💬 Cooking Chat Assistant")
-
 mode = st.radio(
     "Select Chat Mode:",
     ["🍳 Recipe Ideas", "🧠 Cooking Tips", "🧂 Ingredient Substitutes"],
@@ -175,28 +176,27 @@ if final_input:
         "🧠 Cooking Tips": "Give a cooking technique or safety tip about:",
         "🧂 Ingredient Substitutes": "Suggest a substitute for:"
     }
-    full_prompt = f"{prompts[mode]} {final_input}"
     with st.spinner("AI is thinking..."):
-        response = model.generate_content(full_prompt)
-        reply = response.text.strip()
+        resp = model.generate_content(f"{prompts[mode]} {final_input}")
+        reply = resp.text.strip()
 
     st.chat_message("assistant").markdown(reply)
     st.session_state.chat_history.extend([
-        {"role": "user", "content": final_input},
-        {"role": "assistant", "content": reply}
+        {"role":"user","content":final_input},
+        {"role":"assistant","content":reply}
     ])
     st.session_state.trigger_prompt = None
 
 # ========== QUICK CHAT BUTTONS ==========
 st.markdown("### ⚡ Quick Chat Prompts")
-c1, c2, c3 = st.columns(3)
-with c1:
+b1, b2, b3 = st.columns(3)
+with b1:
     if st.button("👨‍🍳 Suggest Dinner"):
         st.session_state.trigger_prompt = "What can I make for dinner with rice and tomatoes?"
-with c2:
+with b2:
     if st.button("🧂 Replace Garlic"):
         st.session_state.trigger_prompt = "What can I use instead of garlic?"
-with c3:
+with b3:
     if st.button("🥗 Healthy Snack"):
         st.session_state.trigger_prompt = "Give me a healthy snack idea under 10 minutes."
 
