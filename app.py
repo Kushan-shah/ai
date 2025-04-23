@@ -1,10 +1,20 @@
 import streamlit as st
 from PIL import Image
 import pytesseract
+import shutil
 import time
 import google.generativeai as genai
 
-# ========== SETUP ==========
+# ========== ENSURE TESSERACT BINARY ==========
+# Stop immediately if tesseract isn't installed
+if not shutil.which("tesseract"):
+    st.error("⛔ Tesseract OCR binary not found. Please install 'tesseract-ocr' on the server.")
+    st.stop()
+
+# Point pytesseract at the binary
+pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
+
+# ========== SETUP AI MODEL ==========
 genai.configure(api_key="AIzaSyBUrWiT4phbZT9JKXAG5B8lap6KdHCs1sI")  # Replace with your Gemini key
 model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
 
@@ -28,13 +38,17 @@ def extract_text_from_image(uploaded_file):
 
 def get_cooking_time(recipe_text):
     try:
-        response = model.generate_content(f"Estimate total cooking time (in minutes only). Recipe: {recipe_text}")
+        response = model.generate_content(
+            f"Estimate total cooking time (in minutes only). Recipe: {recipe_text}"
+        )
         return int(''.join(filter(str.isdigit, response.text)))
     except:
         return 10  # fallback
 
 def get_steps(recipe_text):
-    response = model.generate_content(f"Break this recipe into clear step-by-step instructions with estimated time for each step:\n{recipe_text}")
+    response = model.generate_content(
+        f"Break this recipe into clear step-by-step instructions with estimated time for each step:\n{recipe_text}"
+    )
     return response.text.strip()
 
 def format_time(secs):
@@ -120,7 +134,7 @@ for label, timer in st.session_state.timers.items():
                     timer["paused"] = True
                     timer["duration"] = timer["remaining"]
                     timer["running"] = False
-            elif timer["paused"]:
+            else:  # paused
                 if st.button(f"▶️ Resume", key=f"resume_{label}"):
                     timer["start_time"] = time.time()
                     timer["running"] = True
@@ -136,8 +150,7 @@ for key in remove_keys:
 if st.session_state.steps_output:
     st.markdown("---")
     st.subheader("🔪 Step-by-Step Instructions")
-    steps_list = st.session_state.steps_output.split("\n")
-    for i, step in enumerate(steps_list, 1):
+    for i, step in enumerate(st.session_state.steps_output.split("\n"), 1):
         if step.strip():
             with st.expander(f"Step {i}"):
                 st.write(step.strip())
@@ -146,50 +159,53 @@ if st.session_state.steps_output:
 st.markdown("---")
 st.subheader("💬 Cooking Chat Assistant")
 
-mode = st.radio("Select Chat Mode:", ["🍳 Recipe Ideas", "🧠 Cooking Tips", "🧂 Ingredient Substitutes"], horizontal=True)
+mode = st.radio(
+    "Select Chat Mode:",
+    ["🍳 Recipe Ideas", "🧠 Cooking Tips", "🧂 Ingredient Substitutes"],
+    horizontal=True
+)
 
 user_input = st.chat_input("Ask your assistant...")
 final_input = user_input or st.session_state.trigger_prompt
 
 if final_input:
     st.chat_message("user").write(final_input)
-
-    mode_prompt = {
+    prompts = {
         "🍳 Recipe Ideas": "Suggest a recipe idea based on:",
         "🧠 Cooking Tips": "Give a cooking technique or safety tip about:",
         "🧂 Ingredient Substitutes": "Suggest a substitute for:"
     }
-
-    full_prompt = f"{mode_prompt[mode]} {final_input}"
+    full_prompt = f"{prompts[mode]} {final_input}"
     with st.spinner("AI is thinking..."):
         response = model.generate_content(full_prompt)
         reply = response.text.strip()
 
     st.chat_message("assistant").markdown(reply)
-    st.session_state.chat_history.append({"role": "user", "content": final_input})
-    st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
+    st.session_state.chat_history.extend([
+        {"role": "user", "content": final_input},
+        {"role": "assistant", "content": reply}
+    ])
     st.session_state.trigger_prompt = None
 
 # ========== QUICK CHAT BUTTONS ==========
 st.markdown("### ⚡ Quick Chat Prompts")
-col1, col2, col3 = st.columns(3)
-with col1:
+c1, c2, c3 = st.columns(3)
+with c1:
     if st.button("👨‍🍳 Suggest Dinner"):
         st.session_state.trigger_prompt = "What can I make for dinner with rice and tomatoes?"
-with col2:
+with c2:
     if st.button("🧂 Replace Garlic"):
         st.session_state.trigger_prompt = "What can I use instead of garlic?"
-with col3:
+with c3:
     if st.button("🥗 Healthy Snack"):
         st.session_state.trigger_prompt = "Give me a healthy snack idea under 10 minutes."
 
-# ========== CHAT HISTORY ==========
+# ========== SHOW CHAT HISTORY ==========
 with st.expander("📜 Show Full Chat History"):
     for msg in st.session_state.chat_history:
         st.markdown(f"**{msg['role'].capitalize()}**: {msg['content']}")
 
-# ========== STYLE ==========
+# ========== CUSTOM STYLING ==========
 st.markdown("""
 <style>
 body, html, [class*="css"] {
