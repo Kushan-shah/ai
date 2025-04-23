@@ -3,7 +3,7 @@ import time
 import google.generativeai as genai
 
 # ========== SETUP ==========
-genai.configure(api_key="AIzaSyBUrWiT4phbZT9JKXAG5B8lap6KdHCs1sI")  # Replace with your Gemini key
+genai.configure(api_key="AIzaSyBUrWiT4phbZT9JKXAG5B8lap6KdHCs1sI")
 model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
 
 st.set_page_config("🍳 AI Cooking Assistant", layout="centered")
@@ -18,6 +18,8 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "trigger_prompt" not in st.session_state:
     st.session_state.trigger_prompt = None
+if "completed_timers" not in st.session_state:
+    st.session_state.completed_timers = []
 
 # ========== UTILS ==========
 def get_cooking_time(recipe_text):
@@ -25,10 +27,14 @@ def get_cooking_time(recipe_text):
         response = model.generate_content(f"Estimate total cooking time (in minutes only). Recipe: {recipe_text}")
         return int(''.join(filter(str.isdigit, response.text)))
     except:
-        return 10  # fallback
+        return 10
 
 def get_steps(recipe_text):
     response = model.generate_content(f"Break this recipe into clear step-by-step instructions with estimated time for each step:\n{recipe_text}")
+    return response.text.strip()
+
+def get_nutrition(recipe_text):
+    response = model.generate_content(f"Give an estimated nutrition breakdown of the following recipe:\n{recipe_text}\nInclude calories, protein, carbs, fats.")
     return response.text.strip()
 
 def format_time(secs):
@@ -47,6 +53,7 @@ if st.button("🧠 Analyze with AI"):
         with st.spinner("Analyzing..."):
             time_est = get_cooking_time(text_input)
             steps = get_steps(text_input)
+            nutrition = get_nutrition(text_input)
             label = f"🍳 {text_input.split()[0][:15]}..."
             st.session_state.timers[label] = {
                 "duration": time_est * 60,
@@ -54,7 +61,8 @@ if st.button("🧠 Analyze with AI"):
                 "running": False,
                 "paused": False,
                 "steps": steps,
-                "start_time": None
+                "start_time": None,
+                "nutrition": nutrition
             }
             st.session_state.steps_output = steps
             st.success(f"✅ Timer for '{label}' added! Duration: {time_est} min")
@@ -77,7 +85,8 @@ if st.button("➕ Add Timer"):
             "running": False,
             "paused": False,
             "steps": "",
-            "start_time": None
+            "start_time": None,
+            "nutrition": ""
         }
         st.success(f"✅ Timer '{manual_label}' added for {minutes} min {seconds} sec")
     else:
@@ -96,8 +105,12 @@ for label, timer in st.session_state.timers.items():
                 timer["remaining"] = max(0, timer["duration"] - elapsed)
                 if timer["remaining"] == 0:
                     st.error(f"⏰ '{label}' is DONE!")
+                    st.session_state.completed_timers.append((label, time.ctime()))
                     remove_keys.append(label)
             st.markdown(f"**{label}** - ⏳ `{format_time(timer['remaining'])}`")
+            if timer["duration"] > 0:
+                progress = (timer["duration"] - timer["remaining"]) / timer["duration"]
+                st.progress(progress)
         with col2:
             if not timer["running"]:
                 if st.button(f"▶️ Start", key=f"start_{label}"):
@@ -120,6 +133,12 @@ for label, timer in st.session_state.timers.items():
 
 for key in remove_keys:
     del st.session_state.timers[key]
+
+# ========== COMPLETED TIMERS LOG ==========
+if st.session_state.completed_timers:
+    with st.expander("📊 Completed Timers Log"):
+        for label, done_time in st.session_state.completed_timers:
+            st.markdown(f"**{label}** completed at **{done_time}**")
 
 # ========== STEP-BY-STEP INSTRUCTIONS ==========
 if st.session_state.steps_output:
